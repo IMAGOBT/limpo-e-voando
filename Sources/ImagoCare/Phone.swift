@@ -537,7 +537,7 @@ struct PhoneView: View {
         }
         .padding(.horizontal, 30).padding(.bottom, 20)
         .onAppear { phone.start() }
-        .onChange(of: phone.message) { _, m in if let m { state.toast = m; phone.message = nil } }
+        .onChange(of: phone.message) { m in if let m { state.toast = m; phone.message = nil } }
         .confirmationDialog("Importar \(importList.count) arquivos para \(state.driveRoot != nil ? "o Google Drive" : "Imagens")?", isPresented: $confirmImport) {
             Button("Importar e organizar") {
                 let l = importList, subj = bySubject

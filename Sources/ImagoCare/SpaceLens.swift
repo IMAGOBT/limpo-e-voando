@@ -78,12 +78,7 @@ struct SpaceLensResults: View {
                 GlassCard(padding: 20) {
                     VStack(spacing: 18) {
                         ZStack {
-                            Chart(Array(slices.enumerated()), id: \.offset) { _, s in
-                                SectorMark(angle: .value("Tamanho", s.1), innerRadius: .ratio(0.62), angularInset: 1.5)
-                                    .cornerRadius(5)
-                                    .foregroundStyle(s.2)
-                            }
-                            .chartLegend(.hidden)
+                            Donut(slices: slices.map { (Double($0.1), $0.2) })
                             .animation(.easeInOut(duration: 0.4), value: items.count)
                             VStack(spacing: 2) {
                                 Text(FS.fmt(total)).font(.system(size: 24, weight: .semibold)).monospacedDigit()
@@ -219,17 +214,31 @@ struct SpaceLensResults: View {
         isDir = Set(listing.filter(\.1).map(\.0))
         totalChildren = listing.count
         done = 0
-        var batch: [FileItem] = []
-        for (child, _) in listing {
-            let size = await Task.detached { FS.size(of: child) }.value
-            guard !Task.isCancelled, current == dir else { return }
-            batch.append(FileItem(url: child, size: size))
-            done += 1
-            if batch.count >= 4 || done == listing.count {   // atualiza a tela em pequenos lotes
-                items = (items + batch).sorted { $0.size > $1.size }
-                batch = []
+        // Mede até 4 pastas ao mesmo tempo; cada uma aparece assim que termina (uma pasta gigante não segura as outras).
+        let urls = listing.map(\.0)
+        await withTaskGroup(of: FileItem.self) { group in
+            var next = 0
+            func addNext() {
+                guard next < urls.count else { return }
+                let u = urls[next]; next += 1
+                group.addTask(priority: .userInitiated) { FileItem(url: u, size: FS.size(of: u)) }
+            }
+            for _ in 0..<min(4, urls.count) { addNext() }
+            var batch: [FileItem] = []
+            var lastFlush = Date()
+            for await item in group {
+                if Task.isCancelled || current != dir { group.cancelAll(); return }
+                batch.append(item)
+                done += 1
+                addNext()
+                if Date().timeIntervalSince(lastFlush) > 0.25 || done == urls.count {   // no máx. 4 redesenhos por segundo
+                    items = (items + batch).sorted { $0.size > $1.size }
+                    batch = []
+                    lastFlush = Date()
+                }
             }
         }
+        guard !Task.isCancelled, current == dir else { return }
         state.lensCache[dir] = items
     }
 

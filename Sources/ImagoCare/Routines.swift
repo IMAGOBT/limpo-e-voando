@@ -310,7 +310,7 @@ struct RoutinesView: View {
                             Text(FS.fmt(state.routinesFreedThisWeek)).font(.system(size: 26, weight: .light)).monospacedDigit()
                             Toggle("Abrir ao ligar o Mac", isOn: $loginOn)
                                 .toggleStyle(.switch).controlSize(.small)
-                                .onChange(of: loginOn) { _, on in
+                                .onChange(of: loginOn) { on in
                                     if let err = LoginItem.set(on) {
                                         state.toast = "Não consegui ajustar: \(err)"
                                         loginOn = LoginItem.isOn

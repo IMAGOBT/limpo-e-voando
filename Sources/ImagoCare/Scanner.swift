@@ -84,6 +84,7 @@ enum FS {
         var total: Int64 = 0
         if let e = fm.enumerator(at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in true }) {
             for case let f as URL in e {
+                if Task.isCancelled { break }   // saiu da pasta: para de medir na hora
                 if let fv = try? f.resourceValues(forKeys: keys), fv.isRegularFile == true {
                     total += Int64(fv.totalFileAllocatedSize ?? 0)
                 }

@@ -2,23 +2,43 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key><string>pt-BR</string>
-    <key>CFBundleLocalizations</key><array><string>pt-BR</string></array>
-    <key>CFBundleAllowMixedLocalizations</key><true/>
-    <key>CFBundleName</key><string>Limpo e Voando</string>
-    <key>CFBundleDisplayName</key><string>Limpo e Voando</string>
-    <key>CFBundleIdentifier</key><string>art.imagostudio.care</string>
-    <key>CFBundleExecutable</key><string>ImagoCare</string>
-    <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
-    <key>LSMinimumSystemVersion</key><string>14.0</string>
-    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSAppleEventsUsageDescription</key><string>Para pedir ao Finder que esvazie a Lixeira.</string>
-    <key>NSDesktopFolderUsageDescription</key><string>Para encontrar arquivos grandes e duplicados na Mesa.</string>
-    <key>NSDocumentsFolderUsageDescription</key><string>Para encontrar arquivos grandes em Documentos.</string>
-    <key>NSDownloadsFolderUsageDescription</key><string>Para encontrar downloads duplicados e instaladores esquecidos.</string>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>pt-BR</string>
+	<key>CFBundleDisplayName</key>
+	<string>Limpo e Voando</string>
+	<key>CFBundleExecutable</key>
+	<string>ImagoCare</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>art.imagostudio.care</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>pt-BR</string>
+	</array>
+	<key>CFBundleName</key>
+	<string>Limpo e Voando</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Para pedir ao Finder que esvazie a Lixeira.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Para encontrar arquivos grandes e duplicados na Mesa.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Para encontrar arquivos grandes em Documentos.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Para encontrar downloads duplicados e instaladores esquecidos.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 </dict>
 </plist>

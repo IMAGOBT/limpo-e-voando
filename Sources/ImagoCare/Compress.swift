@@ -125,6 +125,7 @@ enum CompressEngine {
     static func compressPDF(_ src: URL, to dst: URL) -> String? {
         guard let doc = PDFDocument(url: src) else { return "Não consegui abrir o PDF" }
         if doc.isEncrypted && doc.isLocked { return "PDF protegido por senha" }
+        guard #available(macOS 13.4, *) else { return "Atualize o macOS para 13.4 ou mais novo para comprimir PDF" }
         let ok = doc.write(to: dst, withOptions: [.saveImagesAsJPEGOption: true,
                                                   .optimizeImagesForScreenOption: true])
         return ok ? nil : "Não consegui salvar o PDF comprimido"

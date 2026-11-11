@@ -489,7 +489,7 @@ struct BackupView: View {
                         .font(.system(size: 12)).foregroundStyle(Color.ink.opacity(0.76))
                     Spacer()
                     Toggle("Abrir ao ligar o Mac", isOn: $loginOn).toggleStyle(.switch).controlSize(.small)
-                        .onChange(of: loginOn) { _, on in
+                        .onChange(of: loginOn) { on in
                             if let err = LoginItem.set(on) { state.toast = "Não consegui ajustar: \(err)"; loginOn = LoginItem.isOn }
                         }
                 }

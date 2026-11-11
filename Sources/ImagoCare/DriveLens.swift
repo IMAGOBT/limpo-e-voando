@@ -211,11 +211,7 @@ struct DriveLensView: View {
                 GlassCard(padding: 20) {
                     VStack(alignment: .leading, spacing: 14) {
                         ZStack {
-                            Chart(Array(slices(items).enumerated()), id: \.offset) { _, s in
-                                SectorMark(angle: .value("Tamanho", s.1), innerRadius: .ratio(0.62), angularInset: 1.5)
-                                    .cornerRadius(5).foregroundStyle(s.2)
-                            }
-                            .chartLegend(.hidden)
+                            Donut(slices: slices(items).map { (Double($0.1), $0.2) })
                             .animation(.easeInOut(duration: 0.35), value: here)
                             VStack(spacing: 2) {
                                 Text(FS.fmt(total)).font(.system(size: 24, weight: .semibold)).monospacedDigit()

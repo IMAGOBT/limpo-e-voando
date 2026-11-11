@@ -606,3 +606,48 @@ extension View {
         return g
     }
 }
+
+
+// MARK: - Rosca (gráfico de fatias) que roda do macOS 13 em diante
+
+struct Donut: View {
+    let slices: [(Double, Color)]
+    var inner: CGFloat = 0.62
+    var gapDegrees: Double = 1.2
+
+    var body: some View {
+        GeometryReader { g in
+            let side = min(g.size.width, g.size.height)
+            let total = slices.reduce(0) { $0 + max($1.0, 0) }
+            let center = CGPoint(x: g.size.width / 2, y: g.size.height / 2)
+            let outerR = side / 2, innerR = side / 2 * inner
+            ZStack {
+                if total <= 0 {
+                    Circle().stroke(Color.ink.opacity(0.08), lineWidth: outerR - innerR)
+                        .frame(width: (outerR + innerR), height: (outerR + innerR))
+                        .position(center)
+                } else {
+                    ForEach(Array(arcs(total).enumerated()), id: \.offset) { _, a in
+                        Path { p in
+                            p.addArc(center: center, radius: outerR, startAngle: .degrees(a.0), endAngle: .degrees(a.1), clockwise: false)
+                            p.addArc(center: center, radius: innerR, startAngle: .degrees(a.1), endAngle: .degrees(a.0), clockwise: true)
+                            p.closeSubpath()
+                        }
+                        .fill(a.2)
+                    }
+                }
+            }
+        }
+    }
+
+    private func arcs(_ total: Double) -> [(Double, Double, Color)] {
+        var start = -90.0
+        let gap = slices.count > 1 ? gapDegrees : 0
+        return slices.map { v, c in
+            let sweep = max(v, 0) / total * 360
+            defer { start += sweep }
+            let a = start + gap / 2, b = max(a + 0.4, start + sweep - gap / 2)
+            return (a, b, c)
+        }
+    }
+}
