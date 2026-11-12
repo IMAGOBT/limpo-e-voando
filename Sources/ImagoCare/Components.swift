@@ -356,8 +356,11 @@ struct CheckBox: View {
                 }
             }
             .frame(width: 20, height: 20)
+            .padding(8)                       // área de clique maior que o desenho
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(-8)
     }
 }
 
@@ -462,6 +465,11 @@ struct ItemRow: View {
         }
         .padding(.vertical, 5)
         .contentShape(Rectangle())
+        // clicar em qualquer ponto da linha marca/desmarca
+        .onTapGesture { if selectable { state.toggle(item.url) } }
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(selectable && state.selected.contains(item.url) ? Theme.blue.opacity(0.10) : Color.clear)
+            .padding(.horizontal, -6))
     }
 }
 
