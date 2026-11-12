@@ -367,6 +367,7 @@ struct PillButton: View {
     var prominent = true
     var enabled = true
     let action: () -> Void
+    private var solid: Bool { prominent && enabled }
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
@@ -375,13 +376,14 @@ struct PillButton: View {
             }
             .font(.system(size: 13))
             .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(Capsule().fill(prominent ? AnyShapeStyle(Color.ink) : AnyShapeStyle(Color.ink.opacity(0.09))))
-            .overlay(Capsule().strokeBorder(Color.ink.opacity(prominent ? 0 : 0.26), lineWidth: 0.8))
-            .foregroundStyle(prominent ? Color.paper : Color.ink)
+            // apagado: vira contorno, com texto legível nos dois modos
+            .background(Capsule().fill(solid ? AnyShapeStyle(Color.ink) : AnyShapeStyle(Color.ink.opacity(0.09))))
+            .overlay(Capsule().strokeBorder(Color.ink.opacity(solid ? 0 : 0.26), lineWidth: 0.8))
+            .foregroundStyle(solid ? Color.paper : Color.ink)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.5)
+        .opacity(enabled ? 1 : 0.55)
     }
 }
 

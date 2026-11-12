@@ -45,6 +45,7 @@ struct ContentView: View {
                 case .lens: SpaceLensView()
                 case .cloud: CloudView()
                 case .compress: CompressView()
+                case .download: DownloadView()
                 case .routines: RoutinesView()
                 case .organize: OrganizerView()
                 case .phone: PhoneView()

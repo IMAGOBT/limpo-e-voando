@@ -12,13 +12,13 @@ enum SectionTone {
 }
 
 enum Section: String, CaseIterable, Identifiable {
-    case home, cleanup, performance, routines, organize, apps, clutter, lens, cloud, compress, backup, phone, tools, activity
+    case home, cleanup, performance, routines, organize, apps, clutter, lens, cloud, compress, download, backup, phone, tools, activity
     var id: String { rawValue }
 
     /// Núcleo do app: limpeza e desempenho.
     static let main: [Section] = [.home, .cleanup, .performance, .routines, .organize, .lens, .clutter, .apps]
     /// Processos rápidos (secundários).
-    static let quick: [Section] = [.cloud, .backup, .compress, .phone]
+    static let quick: [Section] = [.cloud, .backup, .compress, .download, .phone]
 
     var title: String {
         switch self {
@@ -34,6 +34,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .phone: "Celular · Bônus (teste)"
         case .backup: "Backup"
         case .compress: "Compressor"
+        case .download: "Baixar vídeo"
         case .tools: "Ferramentas"
         case .activity: "Atividades"
         }
@@ -49,6 +50,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .lens: "circle.dashed.inset.filled"
         case .cloud: "icloud.and.arrow.up.fill"
         case .compress: "arrow.down.right.and.arrow.up.left"
+        case .download: "arrow.down.circle.fill"
         case .routines: "clock.arrow.2.circlepath"
         case .organize: "tray.2.fill"
         case .phone: "iphone"
@@ -68,6 +70,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .lens: "magnifyingglass"
         case .cloud: "icloud.and.arrow.up.fill"
         case .compress: "arrow.down.right.and.arrow.up.left"
+        case .download: "arrow.down.to.line"
         case .routines: "clock.arrow.2.circlepath"
         case .organize: "tray.2.fill"
         case .phone: "iphone"
@@ -90,6 +93,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .organize: "Cada arquivo no seu lugar, por tipo ou por data."
         case .routines: "Configure uma vez e o Mac se mantém limpo sozinho."
         case .compress: "Deixe vídeos e PDFs mais leves sem perder qualidade visível."
+        case .download: "Cole o link e baixe o vídeo na maior qualidade, até 4K."
         case .cloud: "Mande os arquivos pesados para a nuvem e libere espaço de verdade."
         case .tools: "Todas as ferramentas do Limpo e Voando num só lugar."
         case .activity: "Como o seu Mac está e o que o Limpo e Voando já fez."
@@ -125,7 +129,7 @@ enum Section: String, CaseIterable, Identifiable {
                          ("PDFs com imagens otimizadas", "doc.richtext.fill"),
                          ("Original preservado até dar certo", "checkmark.shield.fill"),
                          ("Funciona com arquivos do Drive", "icloud.fill")]
-        case .routines, .organize, .backup, .phone, .tools, .activity: []
+        case .routines, .organize, .backup, .phone, .download, .tools, .activity: []
         }
     }
 
@@ -144,6 +148,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .lens: 0.72
         case .cloud: 0.57
         case .compress: 0.95
+        case .download: 0.62
         case .tools: 0.66
         case .activity: 0.55
         }
@@ -159,7 +164,7 @@ enum Section: String, CaseIterable, Identifiable {
     /// Cor dominante da seção no modo "Variado".
     var tone: SectionTone {
         switch self {
-        case .home, .routines, .organize, .apps, .tools, .backup, .phone: .light
+        case .home, .routines, .organize, .apps, .tools, .backup, .phone, .download: .light
         case .cleanup, .lens, .cloud, .activity: .dark
         case .performance, .clutter, .compress: .navy
         }

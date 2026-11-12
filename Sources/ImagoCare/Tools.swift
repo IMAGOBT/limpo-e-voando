@@ -76,6 +76,8 @@ struct ToolsView: View {
             },
             Tool(title: "Mover para a nuvem", text: "Mande vídeos e arquivos pesados para o Google Drive e libere o espaço no Mac.",
                  symbol: "icloud.and.arrow.up.fill", tint: Section.cloud.accent, isNew: true) { open(.cloud) },
+            Tool(title: "Baixar vídeo pelo link", text: "Cole o link do Instagram, Pinterest ou YouTube: o vídeo chega no Mac na maior qualidade, até 4K.",
+                 symbol: "arrow.down.circle.fill", tint: Theme.blue, isNew: true, button: "Abrir") { open(.download) },
             Tool(title: "Compressor de vídeos e PDFs", text: "Converte vídeos para HEVC e enxuga PDFs pesados. O original só sai quando dá certo.",
                  symbol: "arrow.down.right.and.arrow.up.left", tint: Section.compress.accent, isNew: true) { open(.compress) },
             Tool(title: "Lupa do Drive", text: "Veja o que ocupa o seu Google Drive: pastas, arquivos grandes, antigos e duplicados.",

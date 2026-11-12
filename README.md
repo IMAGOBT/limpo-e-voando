@@ -1,6 +1,6 @@
 # Limpo e Voando
 
-App para macOS 13 Ventura ou mais novo que libera espaço e deixa o Mac rápido: limpeza, desempenho, rotinas automáticas, organizador de pastas, lupa de espaço, duplicados, desinstalador, nuvem (Google Drive), backup e compressor.
+App para macOS 13 Ventura ou mais novo que libera espaço e deixa o Mac rápido: limpeza, desempenho, rotinas automáticas, organizador de pastas, lupa de espaço, duplicados, desinstalador, nuvem (Google Drive), backup e compressor e **baixar vídeo pelo link** (Instagram, Pinterest, YouTube, até 4K).
 O módulo Celular → Drive é **bônus, em teste**.
 
 ## Instalar
