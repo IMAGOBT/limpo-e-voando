@@ -17,7 +17,11 @@ enum DLTools {
         }
         return nil
     }
-    static var ytdlp: String? { find("yt-dlp") ?? find("yt-dlp_macos") }
+    /// Sempre o yt-dlp oficial (independente, sem Python) guardado na pasta do app.
+    static var ytdlp: String? {
+        let p = supportBin.appendingPathComponent("yt-dlp").path
+        return FileManager.default.isExecutableFile(atPath: p) ? p : nil
+    }
     static var ffmpeg: String? { find("ffmpeg") }
     static var brew: String? { ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].first { FileManager.default.isExecutableFile(atPath: $0) } }
 
@@ -36,6 +40,32 @@ enum DLTools {
         } catch {
             return "Não consegui baixar o componente: \(error.localizedDescription)"
         }
+    }
+
+    /// Mantém o motor em dia (Instagram e YouTube mudam toda semana). No máx. 1 vez por dia.
+    static func updateIfNeeded() async {
+        let key = "dl.lastUpdate"
+        let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > 20 * 3600 else { return }
+        if ytdlp == nil { _ = await installYtDlp() } else { _ = await installYtDlp() }
+        UserDefaults.standard.set(Date(), forKey: key)
+    }
+
+    /// Navegadores que o yt-dlp sabe ler, começando pelo navegador padrão do Mac.
+    static func browsers() -> [String] {
+        let ws = NSWorkspace.shared
+        let known: [(String, String)] = [("com.google.Chrome", "chrome"), ("com.brave.Browser", "brave"),
+                                         ("com.microsoft.edgemac", "edge"), ("org.mozilla.firefox", "firefox"),
+                                         ("com.vivaldi.Vivaldi", "vivaldi"), ("com.operasoftware.Opera", "opera"),
+                                         ("com.apple.Safari", "safari")]
+        var out: [String] = []
+        if let def = ws.urlForApplication(toOpen: URL(string: "https://instagram.com")!),
+           let bid = Bundle(url: def)?.bundleIdentifier,
+           let m = known.first(where: { $0.0 == bid }) { out.append(m.1) }
+        for (bid, name) in known where !out.contains(name) && ws.urlForApplication(withBundleIdentifier: bid) != nil {
+            out.append(name)
+        }
+        return out
     }
 
     /// Instala o ffmpeg pelo Homebrew (só quando o Homebrew existe).
@@ -104,9 +134,9 @@ final class DownloadCenter: ObservableObject {
     @Published var compat = UserDefaults.standard.object(forKey: "dl.compat") as? Bool ?? true {
         didSet { UserDefaults.standard.set(compat, forKey: "dl.compat") }
     }
-    /// 0 = nenhum, 1 = Safari, 2 = Chrome (para vídeos que pedem login, como alguns do Instagram).
-    @Published var cookies = UserDefaults.standard.integer(forKey: "dl.cookies") {
-        didSet { UserDefaults.standard.set(cookies, forKey: "dl.cookies") }
+    /// Login do navegador para quem pede (Instagram): 0 = automático, 1 = nunca, 2 = Chrome, 3 = Safari.
+    @Published var cookies = UserDefaults.standard.integer(forKey: "dl.cookies.v2") {
+        didSet { UserDefaults.standard.set(cookies, forKey: "dl.cookies.v2") }
     }
 
     private var running = false
@@ -120,6 +150,7 @@ final class DownloadCenter: ObservableObject {
         installing = true
         defer { installing = false; refreshTools() }
         if DLTools.ytdlp == nil, let err = await DLTools.installYtDlp() { message = err; return }
+        UserDefaults.standard.set(Date(), forKey: "dl.lastUpdate")
         if DLTools.ffmpeg == nil, DLTools.brew != nil, let err = await DLTools.installFfmpeg() { message = err; return }
     }
 
@@ -171,64 +202,79 @@ final class DownloadCenter: ObservableObject {
     // MARK: Execução
 
     private func run(_ job: DLJob) async {
-        guard let ytdlp = DLTools.ytdlp else {
-            job.status = .failed("Falta o componente de download. Toque em \"Instalar componentes\"."); return
+        job.status = .downloading
+        job.detail = "Preparando…"
+        // motor oficial: instala na primeira vez e atualiza 1x por dia
+        if DLTools.ytdlp == nil {
+            job.detail = "Instalando o motor de download (só na primeira vez)…"
+            if let err = await DLTools.installYtDlp() { job.status = .failed(err); job.detail = "Não deu certo"; return }
+            UserDefaults.standard.set(Date(), forKey: "dl.lastUpdate")
+            refreshTools()
+        } else {
+            await DLTools.updateIfNeeded()
         }
+        guard let ytdlp = DLTools.ytdlp else { job.status = .failed("Não consegui instalar o motor de download."); return }
+        if case .cancelled = job.status { return }
+
         let folder = URL(fileURLWithPath: folderPath)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let info = FileManager.default.temporaryDirectory.appendingPathComponent("lev-\(job.id.uuidString).txt")
         defer { try? FileManager.default.removeItem(at: info) }
 
-        var args = [
-            "--no-playlist", "--newline", "--no-mtime", "--restrict-filenames", "--no-part",
-            // maior resolução até 4K, depois mais quadros por segundo
-            "-f", "bv*+ba/b", "-S", "res:2160,fps,hdr:sdr,vcodec:h264",
+        let host = URL(string: job.url)?.host?.lowercased() ?? ""
+        let isInstagram = host.contains("instagram")
+        let hasFF = DLTools.ffmpeg != nil
+        var base = [
+            "--newline", "--no-mtime", "--no-part", "--no-warnings",
+            "--retries", "5", "--fragment-retries", "10", "--socket-timeout", "30",
+            // sem ffmpeg não dá para juntar vídeo + áudio: pega o melhor arquivo único
+            "-f", hasFF ? "bv*+ba/b" : "b",
+            "-S", "res:2160,fps,hdr:sdr,vcodec:h264",
             "--merge-output-format", "mp4",
-            "-o", folder.path + "/%(title).90B [%(id)s].%(ext)s",
+            "-o", folder.path + (isInstagram ? "/%(uploader,channel|Instagram)s %(id)s.%(ext)s" : "/%(title).90B [%(id)s].%(ext)s"),
             "--progress-template", "download:LEVP %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s",
-            "--print-to-file", "after_move:%(filepath)s\t%(height)s\t%(vcodec)s\t%(duration)s\t%(title)s", info.path,
+            "--print-to-file", "after_move:%(filepath)s\t%(height)s\t%(vcodec)s\t%(duration)s\t%(title)s\t%(width)s", info.path,
         ]
-        if let ff = DLTools.ffmpeg { args += ["--ffmpeg-location", ff] }
+        // YouTube com "&list=": só o vídeo. Instagram com vários vídeos no post: todos.
+        if !isInstagram { base.append("--no-playlist") }
+        if let ff = DLTools.ffmpeg { base += ["--ffmpeg-location", ff] }
+
+        // Tentativas: sem login → login do navegador (padrão primeiro). O Instagram quase sempre pede login.
+        var attempts: [String?] = []
         switch cookies {
-        case 1: args += ["--cookies-from-browser", "safari"]
-        case 2: args += ["--cookies-from-browser", "chrome"]
-        default: break
+        case 1: attempts = [nil]
+        case 2: attempts = ["chrome"]
+        case 3: attempts = ["safari"]
+        default: attempts = isInstagram ? DLTools.browsers().map { Optional($0) } + [nil] : [nil] + DLTools.browsers().map { Optional($0) }
         }
-        args.append(job.url)
+        if attempts.isEmpty { attempts = [nil] }
 
-        job.status = .downloading
-        job.detail = "Conectando…"
-        let (code, errText) = await runProcess(ytdlp, args, job: job) { [weak job] line in
-            guard let job else { return }
-            if line.hasPrefix("[download] Destination:") {
-                job.streams += 1
-                let name = URL(fileURLWithPath: String(line.dropFirst(24))).deletingPathExtension().lastPathComponent
-                    .replacingOccurrences(of: #"\.f\d+$"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #" ?\[[^\]]+\]$"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: "_", with: " ")
-                if !name.isEmpty { job.title = name }
-            } else if line.hasPrefix("LEVP ") {
-                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-                if parts.count >= 2, let pct = Double(parts[1].replacingOccurrences(of: "%", with: "")) {
-                    // 1º arquivo (vídeo) = 0–85%, 2º (áudio) = 85–96%
-                    let base = job.streams <= 1 ? 0.0 : 0.85
-                    let span = job.streams <= 1 ? 0.85 : 0.11
-                    job.progress = max(job.progress, base + span * pct / 100)
-                    let speed = parts.count > 2 ? String(parts[2]) : ""
-                    let eta = parts.count > 3 ? String(parts[3]) : ""
-                    job.detail = job.streams <= 1 ? "Baixando vídeo · \(speed) · falta \(eta)" : "Baixando áudio · \(speed)"
-                }
-            } else if line.hasPrefix("[Merger]") {
-                job.progress = max(job.progress, 0.96)
-                job.detail = "Juntando vídeo e áudio…"
+        var code: Int32 = -1
+        var errText = ""
+        var errors: [String] = []
+        for browser in attempts {
+            if case .cancelled = job.status { return }
+            try? FileManager.default.removeItem(at: info)
+            job.streams = 0
+            job.progress = 0
+            job.detail = browser == nil ? "Conectando…" : "Conectando com o login do \(browserName(browser!))…"
+            var args = base
+            if let b = browser { args += ["--cookies-from-browser", b] }
+            args.append(job.url)
+            (code, errText) = await runProcess(ytdlp, args, job: job) { [weak job] line in
+                guard let job else { return }
+                self.handle(line, job: job)
             }
+            if code == 0 || job.process?.terminationReason == .uncaughtSignal { break }
+            errors.append(errText)
+            // só vale tentar outro login quando o erro é de login/acesso
+            guard needsLogin(errText) || cookieProblem(errText) else { break }
         }
-
         if case .cancelled = job.status { return }
         if job.process?.terminationReason == .uncaughtSignal { job.status = .cancelled; job.detail = "Cancelado"; return }
-        guard code == 0, let line = try? String(contentsOf: info, encoding: .utf8)
-            .split(separator: "\n").last.map(String.init) else {
-            job.status = .failed(friendly(errText))
+        let lines = ((try? String(contentsOf: info, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        guard code == 0, let line = lines.last else {
+            job.status = .failed(friendly(errors.isEmpty ? errText : errors.joined(separator: "\n"), isInstagram: isInstagram))
             job.detail = "Não deu certo"
             return
         }
@@ -237,8 +283,13 @@ final class DownloadCenter: ObservableObject {
         let height = Int(f[safe: 1] ?? "") ?? 0
         let vcodec = (f[safe: 2] ?? "").lowercased()
         let duration = Double(f[safe: 3] ?? "") ?? 0
-        if let t = f[safe: 4], !t.isEmpty { job.title = t }
-        job.resolution = height >= 2160 ? "4K" : height >= 1440 ? "2K" : height > 0 ? "\(height)p" : ""
+        if let t = f[safe: 4], !t.isEmpty {
+            job.title = t.hasPrefix("Video by ") ? "Instagram · @" + t.dropFirst(9) : t
+        }
+        // vídeo em pé (Reels, Shorts): a qualidade é medida pelo lado menor
+        let width = Int(f[safe: 5] ?? "") ?? 0
+        let short = width > 0 && height > 0 ? min(width, height) : height
+        job.resolution = short >= 2160 ? "4K" : short >= 1440 ? "2K" : short >= 1080 ? "Full HD" : short > 0 ? "\(short)p" : ""
 
         // VP9/AV1 não abrem no QuickTime/Premiere: converte para HEVC (aceleração da placa de vídeo).
         let playable = vcodec.hasPrefix("avc") || vcodec.hasPrefix("h264") || vcodec.hasPrefix("hvc") || vcodec.hasPrefix("hev") || vcodec.hasPrefix("h265")
@@ -250,8 +301,50 @@ final class DownloadCenter: ObservableObject {
         }
         if case .cancelled = job.status { return }
         job.progress = 1
-        job.detail = [job.resolution, FS.fmt(FS.size(of: file))].filter { !$0.isEmpty }.joined(separator: " · ")
+        let extra = lines.count > 1 ? "\(lines.count) vídeos" : ""
+        job.detail = [job.resolution, FS.fmt(FS.size(of: file)), extra].filter { !$0.isEmpty }.joined(separator: " · ")
         job.status = .done(file)
+    }
+
+    private func handle(_ line: String, job: DLJob) {
+        if line.hasPrefix("[download] Destination:") {
+            job.streams += 1
+            let name = URL(fileURLWithPath: String(line.dropFirst(24))).deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: #"\.f\d+$"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #" ?\[[^\]]+\]$"#, with: "", options: .regularExpression)
+            if !name.isEmpty { job.title = name }
+        } else if line.hasPrefix("LEVP ") {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            if parts.count >= 2, let pct = Double(parts[1].replacingOccurrences(of: "%", with: "")) {
+                // 1º arquivo (vídeo) = 0–85%, 2º (áudio) = 85–96%
+                let base = job.streams <= 1 ? 0.0 : 0.85
+                let span = job.streams <= 1 ? 0.85 : 0.11
+                job.progress = max(job.progress, min(0.96, base + span * pct / 100))
+                let speed = parts.count > 2 ? String(parts[2]) : ""
+                let eta = parts.count > 3 ? String(parts[3]) : ""
+                job.detail = job.streams <= 1 ? "Baixando vídeo · \(speed) · falta \(eta)" : "Baixando áudio · \(speed)"
+            }
+        } else if line.hasPrefix("[Merger]") {
+            job.progress = max(job.progress, 0.96)
+            job.detail = "Juntando vídeo e áudio…"
+        }
+    }
+
+    private func browserName(_ b: String) -> String {
+        ["chrome": "Chrome", "safari": "Safari", "brave": "Brave", "edge": "Edge", "firefox": "Firefox",
+         "vivaldi": "Vivaldi", "opera": "Opera"][b] ?? b
+    }
+
+    private func needsLogin(_ e: String) -> Bool {
+        let t = e.lowercased()
+        return t.contains("login") || t.contains("cookies") || t.contains("rate-limit") || t.contains("not granting access")
+            || t.contains("empty media response") || t.contains("private") || t.contains("sign in") || t.contains("confirm you")
+    }
+
+    private func cookieProblem(_ e: String) -> Bool {
+        let t = e.lowercased()
+        return t.contains("could not find") && t.contains("cookies") || t.contains("operation not permitted")
+            || t.contains("failed to decrypt") || t.contains("keyring") || t.contains("permission denied")
     }
 
     /// Converte para HEVC (ou H.264 em Macs sem HEVC na placa de vídeo). Mantém o original se falhar.
@@ -336,16 +429,24 @@ final class DownloadCenter: ObservableObject {
         return (code, errBox.text)
     }
 
-    private func friendly(_ err: String) -> String {
+    private func friendly(_ err: String, isInstagram: Bool) -> String {
         let e = err.lowercased()
-        if e.contains("login") || e.contains("cookies") || e.contains("rate-limit") || e.contains("private") {
-            return "Esse vídeo pede login. Em \"Ajustes\", escolha usar o login do Safari ou do Chrome e tente de novo."
+        if e.contains("operation not permitted") && e.contains("safari") {
+            return "O macOS bloqueou o login do Safari. Use o Chrome (Ajustes) ou dê \"Acesso Total ao Disco\" ao Limpo e Voando."
+        }
+        if needsLogin(err) {
+            return isInstagram
+                ? "O Instagram pediu login. Entre no Instagram pelo Chrome ou Safari neste Mac e tente de novo (no Chrome, clique \"Permitir sempre\" quando o Mac pedir)."
+                : "Esse vídeo pede login. Entre no site pelo navegador e tente de novo."
         }
         if e.contains("unsupported url") { return "Esse site ou link não é suportado." }
-        if e.contains("unable to download") || e.contains("network") || e.contains("timed out") {
+        if e.contains("unable to download") || e.contains("network") || e.contains("timed out") || e.contains("resolve host") {
             return "Falha de conexão. Confira a internet e tente de novo."
         }
-        if e.contains("not available") || e.contains("removed") || e.contains("404") { return "O vídeo não está mais disponível." }
+        if e.contains("not available") || e.contains("removed") || e.contains("404") || e.contains("does not exist") {
+            return "O vídeo não está mais disponível."
+        }
+        if e.contains("no video formats") || e.contains("there is no video") { return "Esse post não tem vídeo (só foto)." }
         let last = err.split(separator: "\n").last(where: { $0.contains("ERROR") }).map(String.init) ?? ""
         return last.isEmpty ? "Não consegui baixar esse link." : last.replacingOccurrences(of: "ERROR: ", with: "")
     }
@@ -401,7 +502,7 @@ struct DownloadView: View {
         VStack(alignment: .leading, spacing: 18) {
             header
 
-            if !center.hasYtDlp || !center.hasFfmpeg { setupCard }
+            if !center.hasFfmpeg { setupCard }
 
             // Campo do link
             GlassCard(padding: 18) {
@@ -419,7 +520,7 @@ struct DownloadView: View {
                             }
                             .buttonStyle(.plain).foregroundStyle(Theme.blue)
                         }
-                        PillButton(title: "Baixar", icon: "arrow.down", enabled: center.hasYtDlp && !link.isEmpty) { start() }
+                        PillButton(title: "Baixar", icon: "arrow.down", enabled: !link.isEmpty) { start() }
                     }
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.ink.opacity(0.05)))
@@ -489,7 +590,7 @@ struct DownloadView: View {
             HStack(spacing: 14) {
                 IconTile(symbol: "shippingbox.fill", tint: Theme.orange)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Falta instalar os componentes de download").font(.system(size: 14, weight: .semibold))
+                    Text("Falta o ffmpeg para o 4K").font(.system(size: 14, weight: .semibold))
                     Text(setupText).font(.system(size: 12)).foregroundStyle(Color.ink.opacity(0.74))
                 }
                 Spacer()
@@ -519,14 +620,15 @@ struct DownloadView: View {
             Toggle("Converter para HEVC (abre no QuickTime e no Premiere)", isOn: $center.compat)
                 .toggleStyle(.switch).font(.system(size: 12))
             VStack(alignment: .leading, spacing: 6) {
-                Text("Vídeos que pedem login (ex.: alguns do Instagram)").font(.system(size: 12))
+                Text("Login do navegador (o Instagram exige)").font(.system(size: 12))
                 Picker("", selection: $center.cookies) {
-                    Text("Sem login").tag(0)
-                    Text("Usar login do Safari").tag(1)
-                    Text("Usar login do Chrome").tag(2)
+                    Text("Automático").tag(0)
+                    Text("Chrome").tag(2)
+                    Text("Safari").tag(3)
+                    Text("Nunca").tag(1)
                 }
                 .pickerStyle(.segmented).labelsHidden()
-                Text("O app só lê o login para pedir o vídeo ao site. Nada é enviado para outro lugar.")
+                Text("Automático: usa o login do seu navegador só quando o site pede. O app lê o login apenas para pedir o vídeo ao próprio site; nada vai para outro lugar.")
                     .font(.system(size: 11)).foregroundStyle(Color.ink.opacity(0.7))
             }
             HStack {
