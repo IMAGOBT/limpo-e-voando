@@ -53,7 +53,8 @@ enum CloudEngine {
         }
         let icloud = home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
         if FS.fm.fileExists(atPath: icloud.path) { out.append(CloudDest(name: "iCloud Drive", root: icloud)) }
-        return out
+        // Google Drive primeiro (é o destino padrão do app)
+        return out.filter { $0.name == "Google Drive" } + out.filter { $0.name != "Google Drive" }
     }
 
     static func isCloud(_ url: URL) -> Bool {
@@ -175,8 +176,8 @@ extension AppState {
     var selectedCloud: Int64 { selectedSize(cloudCandidates) }
     var cloudActive: Bool { cloudJobs.contains { $0.status == .moving || $0.status == .uploading || $0.status == .freeing } }
 
-    func sendToCloud(_ items: [FileItem]) async {
-        guard let dest = cloudDest, !items.isEmpty else { return }
+    func sendToCloud(_ items: [FileItem], to explicit: CloudDest? = nil) async {
+        guard let dest = explicit ?? cloudDest, !items.isEmpty else { return }
         // 1. move (instantâneo: mesmo disco). A partir daqui o app da nuvem começa a enviar.
         for item in items {
             let target = CloudEngine.destination(for: item.url, in: dest)
@@ -227,7 +228,8 @@ extension AppState {
             }
             return CleanResult(count: count, freed: freed)
         }
-        cloudLocal.removeAll { items.contains($0) }
+        let gone = Set(items.map(\.url))
+        cloudLocal.removeAll { gone.contains($0.url) }
         items.forEach { selected.remove($0.url) }
         isWorking = false
     }

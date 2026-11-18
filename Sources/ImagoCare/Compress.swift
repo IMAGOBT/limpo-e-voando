@@ -102,7 +102,12 @@ enum CompressEngine {
     static func compressVideo(_ src: URL, to dst: URL, smaller: Bool,
                               progress: @escaping @Sendable (Double) -> Void) async -> String? {
         let asset = AVURLAsset(url: src)
-        let preset = smaller ? AVAssetExportPresetHEVC1920x1080 : AVAssetExportPresetHEVCHighestQuality
+        var preset = smaller ? AVAssetExportPresetHEVC1920x1080 : AVAssetExportPresetHEVCHighestQuality
+        // Macs sem HEVC no hardware (Intel antigos): cai para H.264
+        let compatible = AVAssetExportSession.exportPresets(compatibleWith: asset)
+        if !compatible.contains(preset) {
+            preset = smaller ? AVAssetExportPreset1920x1080 : AVAssetExportPresetHighestQuality
+        }
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             return "Formato não suportado pelo codificador do Mac"
         }
@@ -161,9 +166,12 @@ enum CompressEngine {
             }
             if original == 0 {
                 // guarda uma cópia do original na Lixeira antes da troca
-                let keep = src.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).\(src.pathExtension)")
+                // cópia com o nome original, fora da pasta (e fora do Drive), para aparecer certinha na Lixeira
+                let dir = try FS.fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: src, create: true)
+                let keep = dir.appendingPathComponent(src.lastPathComponent)
                 try FS.fm.copyItem(at: src, to: keep)
                 try FS.fm.trashItem(at: keep, resultingItemURL: nil)
+                try? FS.fm.removeItem(at: dir)
             }
             // troca atômica: se falhar, o original continua intacto
             _ = try FS.fm.replaceItemAt(src, withItemAt: tmp)
@@ -386,8 +394,12 @@ struct CompressView: View {
     private var list: [CompressItem] {
         tab == 2 ? state.audioItems : state.compressItems.filter { tab == 0 ? $0.kind == .video : $0.kind == .pdf }
     }
-    private var selectedSize: Int64 { state.selectedCompress.reduce(0) { $0 + $1.size } }
-    private var selectedSaving: Int64 { state.selectedCompress.reduce(0) { $0 + ($1.size - ($1.estimate ?? $1.size)) } }
+    /// Só o que está marcado na aba aberta (Vídeos ou PDFs).
+    private var tabSelection: [CompressItem] {
+        state.selectedCompress.filter { tab == 1 ? $0.kind == .pdf : $0.kind == .video }
+    }
+    private var selectedSize: Int64 { tabSelection.reduce(0) { $0 + $1.size } }
+    private var selectedSaving: Int64 { tabSelection.reduce(0) { $0 + ($1.size - ($1.estimate ?? $1.size)) } }
     private var selectedAudio: [CompressItem] { state.audioItems.filter { state.selected.contains($0.url) } }
 
     private var results: some View {
@@ -485,12 +497,12 @@ struct CompressView: View {
             } else {
                 ActionDock(section: .compress,
                            label: "Selecionado: \(FS.fmt(selectedSize)) · economia estimada ~\(FS.fmt(selectedSaving))",
-                           button: "Comprimir", enabled: !state.selectedCompress.isEmpty && !state.compressActive) { confirm = true }
+                           button: "Comprimir", enabled: !tabSelection.isEmpty && !state.compressActive) { confirm = true }
             }
         }
-        .confirmationDialog("Comprimir \(state.selectedCompress.count) arquivo(s)?", isPresented: $confirm) {
+        .confirmationDialog("Comprimir \(tabSelection.count) arquivo(s)?", isPresented: $confirm) {
             Button("Comprimir") {
-                let items = state.selectedCompress
+                let items = tabSelection
                 Task { await state.runCompression(items) }
             }
         } message: {

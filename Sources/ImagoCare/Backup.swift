@@ -104,7 +104,8 @@ enum BackupEngine {
     }
 
     /// Copia (manter nos dois) ou move (liberar o Mac) um item para o Drive.
-    static func transfer(_ it: Item, move: Bool) -> String? {
+    /// Devolve o arquivo final no Drive, ou o erro.
+    static func transfer(_ it: Item, move: Bool) -> (URL?, String?) {
         do {
             try FS.fm.createDirectory(at: it.dst.deletingLastPathComponent(), withIntermediateDirectories: true)
             if move {
@@ -117,14 +118,25 @@ enum BackupEngine {
                     i += 1
                 }
                 try FS.fm.moveItem(at: it.src, to: dst)   // mesmo disco: instantâneo e sem espaço extra
-                return nil
+                return (dst, nil)
             }
-            if FS.fm.fileExists(atPath: it.dst.path) { try FS.fm.removeItem(at: it.dst) }   // versão antiga vai para a Lixeira do Drive
-            try FS.fm.copyItem(at: it.src, to: it.dst)
-            if let m = it.modified { try? FS.fm.setAttributes([.modificationDate: m], ofItemAtPath: it.dst.path) }
-            return nil
+            // copia primeiro com nome temporário; só troca a versão antiga se a cópia deu certo
+            let tmp = it.dst.deletingLastPathComponent().appendingPathComponent(".lev-\(UUID().uuidString)-\(it.dst.lastPathComponent)")
+            do {
+                try FS.fm.copyItem(at: it.src, to: tmp)
+                if let m = it.modified { try? FS.fm.setAttributes([.modificationDate: m], ofItemAtPath: tmp.path) }
+                if FS.fm.fileExists(atPath: it.dst.path) {
+                    _ = try FS.fm.replaceItemAt(it.dst, withItemAt: tmp)
+                } else {
+                    try FS.fm.moveItem(at: tmp, to: it.dst)
+                }
+            } catch {
+                try? FS.fm.removeItem(at: tmp)
+                throw error
+            }
+            return (it.dst, nil)
         } catch {
-            return error.localizedDescription
+            return (nil, error.localizedDescription)
         }
     }
 
@@ -180,7 +192,7 @@ extension AppState {
     }
 
     func previewBackup() async {
-        guard let drive = driveRoot else { return }
+        guard let drive = driveRoot else { backupPreview = (0, 0); return }
         let folders = backup.folders.map { URL(fileURLWithPath: $0) }
         let dest = BackupEngine.destination(drive)
         let moveAll = backup.moves
@@ -235,9 +247,9 @@ extension AppState {
                 continue
             }
             backupProgress.phase = "\(move ? "Movendo" : "Copiando") \(it.src.lastPathComponent)…"
-            let err = await Task.detached { BackupEngine.transfer(it, move: move) }.value
+            let (final, err) = await Task.detached { BackupEngine.transfer(it, move: move) }.value
             if err != nil { failures += 1 } else {
-                pending.append(it.dst); pendingBytes += it.size
+                pending.append(final ?? it.dst); pendingBytes += it.size
                 done += 1; bytes += it.size
             }
             backupProgress.done = done + failures
@@ -385,7 +397,10 @@ struct BackupView: View {
                     .padding(.vertical, 4)
                     Divider().overlay(Theme.hairline)
                 }
-                if let p = state.backupPreview, !state.backup.folders.isEmpty {
+                if state.driveRoot == nil, !state.backup.folders.isEmpty {
+                    Label("Google Drive não encontrado neste Mac.", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.orange)
+                } else if let p = state.backupPreview, !state.backup.folders.isEmpty {
                     Label(p.0 == 0 ? "Tudo já está no backup." : "Próximo backup vai \(state.backup.moves ? "mover" : "enviar") \(p.0) arquivos · \(FS.fmt(p.1))\(state.backup.moves ? " e liberar esse espaço do Mac" : "")",
                           systemImage: p.0 == 0 ? "checkmark.circle" : "arrow.up.circle")
                         .font(.system(size: 12, weight: .medium))

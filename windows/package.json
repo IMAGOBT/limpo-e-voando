@@ -1,0 +1,73 @@
+{
+  "name": "limpo-e-voando",
+  "productName": "Limpo e Voando",
+  "version": "1.0.0",
+  "description": "Limpo e Voando para Windows: limpeza, desempenho e utilidades.",
+  "author": "Imago Studio",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "check": "node scripts/check.js",
+    "test": "node --test test/*.test.js",
+    "screenshot": "electron scripts/screenshot.js",
+    "icon": "node scripts/make-icon.js",
+    "build:win": "electron-builder --win nsis portable --x64 --publish never"
+  },
+  "build": {
+    "appId": "art.imagostudio.limpoevoando",
+    "productName": "Limpo e Voando",
+    "copyright": "Imago Studio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Limpo e Voando",
+      "artifactName": "Limpo-e-Voando-${version}-Instalador.${ext}"
+    },
+    "portable": {
+      "artifactName": "Limpo-e-Voando-${version}-Portatil.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "45.3.4",
+    "electron-builder": "26.18.0",
+    "png-to-ico": "3.0.2"
+  },
+  "allowScripts": {
+    "electron@45.3.4": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

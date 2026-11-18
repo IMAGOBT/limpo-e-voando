@@ -483,7 +483,10 @@ struct PhoneThumb: View {
         .task(id: file.id) {
             guard image == nil else { return }
             let data: Data? = await withCheckedContinuation { cont in
-                file.file.requestThumbnailData(options: [:]) { d, _ in cont.resume(returning: d) }
+                // celular desconectado no meio: desiste em 20 s em vez de ficar esperando para sempre
+                let box = OnceBox<Data?>(cont)
+                file.file.requestThumbnailData(options: [:]) { d, _ in box.resume(d) }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 20) { box.resume(nil) }
             }
             if let data { image = NSImage(data: data) }
         }

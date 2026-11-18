@@ -113,6 +113,20 @@ enum RoutineEngine {
         return latest
     }
 
+    /// Chegada mais recente de qualquer coisa dentro de uma pasta (até 5 mil itens).
+    static func newestArrival(_ url: URL) -> Date {
+        guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
+              let e = FS.fm.enumerator(at: url, includingPropertiesForKeys: [.addedToDirectoryDateKey, .creationDateKey],
+                                       options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { return .distantPast }
+        var newest = Date.distantPast, n = 0
+        for case let f as URL in e {
+            if let d = arrival(f), d > newest { newest = d }
+            n += 1
+            if n > 5000 { return .distantFuture }
+        }
+        return newest
+    }
+
     /// Data em que o item chegou na pasta (ou a criação, se não houver).
     static func arrival(_ url: URL) -> Date? {
         let v = try? url.resourceValues(forKeys: [.addedToDirectoryDateKey, .creationDateKey])
@@ -128,6 +142,11 @@ enum RoutineEngine {
             let n = u.lastPathComponent
             guard !n.hasPrefix("."), !partial.contains(u.pathExtension.lowercased()), match(u) else { continue }
             guard let d = arrival(u), d < limit else { continue }
+            // pastas do próprio app (Organizar, Baixar vídeo) nunca entram na rotina
+            let isFolder = (try? u.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])).map { $0.isDirectory == true && $0.isPackage != true } ?? false
+            if isFolder && (Organizer.isOrganizerFolder(n) || n == "Limpo e Voando") { continue }
+            // pasta antiga com arquivo que chegou recentemente dentro dela: fica
+            if newestArrival(u) > limit { continue }
             // não mexe em nada alterado na última hora (pode estar em uso) — inclusive dentro de pastas
             if latestChange(u) > recent { continue }
             out.append(FileItem(url: u, size: FS.size(of: u), modified: d))
@@ -240,11 +259,12 @@ extension AppState {
                 log = RoutineLog(date: Date(), kind: kind, count: res.count, bytes: res.freed, action: r.action,
                                  note: res.failures.isEmpty ? "" : "\(res.failures.count) não puderam ser movidos")
             case .drive:
-                if cloudDest == nil { cloudDests = CloudEngine.destinations(); cloudDest = cloudDests.first { $0.name == "Google Drive" } }
-                if cloudDest?.name == "Google Drive" {
+                // a rotina procura o próprio Google Drive, sem mexer no destino escolhido na tela Nuvem
+                let google = CloudEngine.destinations().first { $0.name == "Google Drive" }
+                if let google {
                     log = RoutineLog(date: Date(), kind: kind, count: items.count, bytes: items.reduce(0) { $0 + $1.size },
                                      action: .drive, note: "enviados para Meu Drive › Arquivo do Mac")
-                    Task { await self.sendToCloud(items) }   // espera o upload em segundo plano e libera o espaço
+                    Task { await self.sendToCloud(items, to: google) }   // espera o upload em segundo plano e libera o espaço
                 } else {
                     log.note = "Google Drive não encontrado — nada foi movido"
                 }

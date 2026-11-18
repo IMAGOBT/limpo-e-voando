@@ -246,6 +246,8 @@ final class AppState: ObservableObject {
     /// Pasta do Google Drive (calculada uma vez; atualizada ao analisar a Nuvem).
     var cachedDriveRoot: URL?? = nil
     var lensCache: [URL: [FileItem]] = [:]
+    /// Quais itens de cada pasta são pastas navegáveis (sem pacotes nem atalhos), medidos uma vez.
+    var lensDirs: [URL: Set<URL>] = [:]
 
     // Compressor
     @Published var compressItems: [CompressItem] = []
@@ -438,9 +440,10 @@ final class AppState: ObservableObject {
             }
         }
         let (d, t) = (del, tr)
-        await measured(doJunk ? "Limpeza" : "Duplicados") {
+        let res = await measured(doJunk ? "Limpeza" : "Duplicados") {
             await Task.detached { FS.remove(d, permanently: true) + FS.remove(t, permanently: false) }.value
         }
+        forget(Set((d + t).map(\.url).filter { !res.failedPaths.contains($0.path) }))
         junk = await Task.detached { Scanner.scanJunk() }.value
         if doDups { duplicates = await Task.detached { Scanner.scanDuplicates() }.value }
         defaultSelection()
@@ -451,8 +454,21 @@ final class AppState: ObservableObject {
         isWorking = true
         let items = largeFiles.filter { selected.contains($0.url) }
         let r = await measured("Arquivos grandes") { await Task.detached { FS.remove(items, permanently: false) }.value }
-        largeFiles.removeAll { items.contains($0) && !r.failedPaths.contains($0.url.path) }
+        forget(Set(items.filter { !r.failedPaths.contains($0.url.path) }.map(\.url)))
         isWorking = false
+    }
+
+    /// Tira das outras telas o que já foi removido (evita escolher um arquivo que não existe mais).
+    func forget(_ removed: Set<URL>) {
+        guard !removed.isEmpty else { return }
+        largeFiles.removeAll { removed.contains($0.url) }
+        duplicates = duplicates.compactMap { g in
+            let left = g.files.filter { !removed.contains($0.url) }
+            return left.count > 1 ? DuplicateGroup(hash: g.hash, files: left) : nil
+        }
+        cloudCandidates.removeAll { removed.contains($0.url) }
+        compressItems.removeAll { removed.contains($0.url) }
+        selected.subtract(removed)
     }
 
     func uninstall(_ app: AppEntry, leftovers: [FileItem]) async {

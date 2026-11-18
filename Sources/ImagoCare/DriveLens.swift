@@ -102,7 +102,11 @@ extension AppState {
 
     func trashDriveDups() async {
         guard let r = driveReport else { return }
-        let items = r.dups.flatMap(\.files).filter { selected.contains($0.url) }
+        // sempre fica pelo menos uma cópia de cada grupo, mesmo se tudo estiver marcado
+        let items = r.dups.flatMap { g -> [FileItem] in
+            let pick = g.files.filter { selected.contains($0.url) }
+            return pick.count == g.files.count ? Array(pick.dropFirst()) : pick
+        }
         isWorking = true
         let res = await Task.detached { FS.remove(items, permanently: false) }.value
         let removed = Set(items.filter { !res.failedPaths.contains($0.url.path) }.map(\.url))

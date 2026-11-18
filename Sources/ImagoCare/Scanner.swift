@@ -301,8 +301,10 @@ enum Scanner {
         var bySize: [Int64: [FileItem]] = [:]
         for root in roots {
             FS.walkFiles(root) { url, size, date in
-                guard size > 4096 else { return }
-                bySize[size, default: []].append(FileItem(url: url, size: size, modified: date))
+                // agrupa pelo tamanho real do conteúdo (não pelo espaço alocado no disco)
+                let logical = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int(size))
+                guard logical > 4096 else { return }
+                bySize[logical, default: []].append(FileItem(url: url, size: size, modified: date))
             }
         }
         var groups: [DuplicateGroup] = []

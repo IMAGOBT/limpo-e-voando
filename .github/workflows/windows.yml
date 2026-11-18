@@ -1,0 +1,82 @@
+name: Windows (Limpo e Voando)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: windows
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Checar sintaxe e testes de lógica
+        run: |
+          npm run check
+          npm test
+
+      - name: Gerar instalador e versão portátil
+        run: npm run build:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Smoke test (app empacotado, --smoke)
+        run: |
+          $exe = Join-Path $PWD 'dist\win-unpacked\Limpo e Voando.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Executável não encontrado: $exe" }
+          $json = Join-Path $PWD 'smoke.json'
+          # App de interface gráfica: Start-Process para esperar a saída e ler o código de retorno
+          $p = Start-Process -FilePath $exe -ArgumentList '--smoke', "--smoke-out=`"$json`"" -PassThru -NoNewWindow `
+            -RedirectStandardOutput smoke-stdout.txt -RedirectStandardError smoke-stderr.txt
+          $null = $p.Handle
+          if (-not $p.WaitForExit(900000)) { $p.Kill(); throw 'Smoke test passou de 15 minutos' }
+          $code = $p.ExitCode
+          Write-Host '--- stdout ---'; Get-Content smoke-stdout.txt -ErrorAction SilentlyContinue
+          Write-Host '--- stderr ---'; Get-Content smoke-stderr.txt -ErrorAction SilentlyContinue
+          if (-not (Test-Path -LiteralPath $json)) { throw "Smoke não gerou $json (código $code)" }
+          $r = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
+          Write-Host "Smoke ok=$($r.ok) código=$code"
+          if ($code -ne 0 -or -not $r.ok) { throw "Smoke test falhou (código $code)" }
+
+      - name: Resultado do smoke
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-result
+          path: |
+            windows/smoke.json
+            windows/smoke-stdout.txt
+            windows/smoke-stderr.txt
+          if-no-files-found: ignore
+
+      - name: Instalador (NSIS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Limpo-e-Voando-Instalador
+          path: windows/dist/*-Instalador.exe
+          if-no-files-found: error
+
+      - name: Versão portátil
+        uses: actions/upload-artifact@v4
+        with:
+          name: Limpo-e-Voando-Portatil
+          path: windows/dist/*-Portatil.exe
+          if-no-files-found: error

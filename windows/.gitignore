@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# a raiz do repositório ignora "build/": aqui ele guarda o ícone e precisa ir para o Git
+!build/

@@ -271,7 +271,8 @@ extension AppState {
         let items = await Task.detached { Organizer.plan(folder: folder, cfg: cfg) }.value
         let r = await Task.detached { Organizer.apply(items) }.value
         if !r.moves.isEmpty {
-            organizerUndo = r.moves
+            // a organização automática soma ao "desfazer" em vez de apagar o da última vez
+            organizerUndo = automatic ? organizerUndo + r.moves : r.moves
             if let d = try? JSONEncoder().encode(Array(r.moves.prefix(20000))) { UserDefaults.standard.set(d, forKey: Self.organizerUndoKey) }
         }
         editOrganizer { $0.lastRun = Date() }

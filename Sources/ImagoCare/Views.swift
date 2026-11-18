@@ -272,8 +272,8 @@ struct ClutterView: View {
                            text: "Comparo o conteúdo dos arquivos (não só o nome) em Downloads e na Mesa.")
             } else {
                 ScrollView {
-                    VStack(spacing: 12) {
-                        ForEach(state.duplicates) { g in
+                    LazyVStack(spacing: 12) {
+                        ForEach(state.duplicates.prefix(400)) { g in
                             GlassCard(padding: 14) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack {
@@ -364,6 +364,8 @@ struct AppsView: View {
             guard let app = current else { return }
             loadingLeftovers = true
             let found = await Task.detached { Scanner.leftovers(for: app) }.value
+            // trocou de app no meio da busca: descarta o resultado antigo
+            guard !Task.isCancelled, current?.id == app.id else { return }
             leftovers = found
             state.setAll(found, true)
             loadingLeftovers = false

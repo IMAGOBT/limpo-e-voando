@@ -47,8 +47,20 @@ enum DLTools {
         let key = "dl.lastUpdate"
         let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 20 * 3600 else { return }
-        if ytdlp == nil { _ = await installYtDlp() } else { _ = await installYtDlp() }
         UserDefaults.standard.set(Date(), forKey: key)
+        guard let exe = ytdlp else { _ = await installYtDlp(); return }
+        // "-U" só baixa algo quando existe versão nova (rápido no dia a dia); limite de 90 s
+        await Task.detached {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: exe)
+            p.arguments = ["-U"]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            guard (try? p.run()) != nil else { return }
+            let deadline = Date().addingTimeInterval(90)
+            while p.isRunning && Date() < deadline { usleep(200_000) }
+            if p.isRunning { p.terminate() }
+        }.value
     }
 
     /// Navegadores que o yt-dlp sabe ler, começando pelo navegador padrão do Mac.
@@ -369,8 +381,17 @@ final class DownloadCenter: ObservableObject {
             if case .cancelled = job.status { try? FileManager.default.removeItem(at: dst); return nil }
             if code == 0, FileManager.default.fileExists(atPath: dst.path) {
                 let final = src.deletingPathExtension().appendingPathExtension("mp4")
-                _ = try? FileManager.default.replaceItemAt(final, withItemAt: dst)
-                if src != final { try? FileManager.default.removeItem(at: src) }
+                let fm = FileManager.default
+                do {
+                    if fm.fileExists(atPath: final.path) { _ = try fm.replaceItemAt(final, withItemAt: dst) }
+                    else { try fm.moveItem(at: dst, to: final) }
+                } catch {
+                    // não conseguiu trocar: fica o original e o convertido sai de cena
+                    try? fm.removeItem(at: dst)
+                    return nil
+                }
+                // só apaga o original quando o convertido já está no lugar
+                if src != final, fm.fileExists(atPath: final.path) { try? fm.removeItem(at: src) }
                 return final
             }
         }
@@ -391,7 +412,6 @@ final class DownloadCenter: ObservableObject {
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err
-        job.process = p
 
         let errBox = LineBox()
         let outBox = LineBox()
@@ -416,14 +436,23 @@ final class DownloadCenter: ObservableObject {
 
         let code: Int32 = await withCheckedContinuation { cont in
             p.terminationHandler = { proc in cont.resume(returning: proc.terminationStatus) }
-            do { try p.run() } catch {
+            do {
+                try p.run()
+                job.process = p          // só guarda o processo depois que ele de fato começou
+            } catch {
                 p.terminationHandler = nil
+                errBox.append(Data("ERROR: não consegui iniciar \(exe)".utf8))
                 cont.resume(returning: -1)
             }
         }
         out.fileHandleForReading.readabilityHandler = nil
         err.fileHandleForReading.readabilityHandler = nil
-        if let rest = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) {
+        // o que sobrou nos canos (inclui a última linha de erro) é lido fora da tela
+        let (restOut, restErr) = await Task.detached { () -> (Data, Data) in
+            (out.fileHandleForReading.readDataToEndOfFile(), err.fileHandleForReading.readDataToEndOfFile())
+        }.value
+        errBox.append(restErr)
+        if let rest = String(data: restOut, encoding: .utf8) {
             for l in rest.split(separator: "\n") { onLine(String(l)) }
         }
         return (code, errBox.text)

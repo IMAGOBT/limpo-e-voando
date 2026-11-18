@@ -133,7 +133,12 @@ struct SpaceLensResults: View {
                     let r = await state.measured("Lupa: \(p.url.lastPathComponent)") {
                         await Task.detached { FS.remove([p], permanently: false) }.value
                     }
-                    if !r.failedPaths.contains(p.url.path) { items.removeAll { $0 == p }; state.lensCache[current] = items }
+                    if !r.failedPaths.contains(p.url.path) {
+                        items.removeAll { $0 == p }
+                        state.lensCache[current] = items
+                        // as pastas de cima mudaram de tamanho: medem de novo quando abrir
+                        for u in path.dropLast() { state.lensCache[u] = nil }
+                    }
                 }
             }
         } message: {
@@ -183,7 +188,7 @@ struct SpaceLensResults: View {
 
     /// Pastas que o app nunca oferece para apagar.
     private func isProtected(_ url: URL) -> Bool {
-        let p = url.path, h = FS.home.path
+        let p = url.resolvingSymlinksInPath().path, h = FS.home.path
         let blocked = [h + "/Library", h + "/Applications", h + "/Library/CloudStorage", h + "/Library/Mobile Documents",
                        h + "/Documents", h + "/Desktop", h + "/Downloads", h + "/Movies", h + "/Music", h + "/Pictures", h + "/Public"]
         return blocked.contains(p) || p.hasPrefix(h + "/Library/") || CloudEngine.isCloud(url)
@@ -196,7 +201,7 @@ struct SpaceLensResults: View {
 
     private func load() async {
         let dir = current
-        if let cached = state.lensCache[dir] { items = cached; refreshDirFlags(); loading = false; return }
+        if let cached = state.lensCache[dir], let dirs = state.lensDirs[dir] { items = cached; isDir = dirs; loading = false; return }
         loading = true
         defer { if current == dir { loading = false } }
         items = []
@@ -206,8 +211,8 @@ struct SpaceLensResults: View {
             return FS.children(dir)
                 .filter { !$0.lastPathComponent.hasPrefix(".") || keepHidden.contains($0.lastPathComponent) }
                 .map { u in
-                    let v = try? u.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-                    return (u, v?.isDirectory == true && v?.isPackage != true)
+                    let v = try? u.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey, .isSymbolicLinkKey])
+                    return (u, v?.isDirectory == true && v?.isPackage != true && v?.isSymbolicLink != true)
                 }
         }.value
         guard !Task.isCancelled, current == dir else { return }
@@ -240,14 +245,9 @@ struct SpaceLensResults: View {
         }
         guard !Task.isCancelled, current == dir else { return }
         state.lensCache[dir] = items
+        state.lensDirs[dir] = isDir
     }
 
-    private func refreshDirFlags() {
-        isDir = Set(items.filter {
-            var d: ObjCBool = false
-            return FS.fm.fileExists(atPath: $0.url.path, isDirectory: &d) && d.boolValue && $0.url.pathExtension != "app"
-        }.map(\.url))
-    }
 }
 
 /// Chave "Este Mac / Google Drive" da Lupa.

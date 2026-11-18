@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import SwiftUI
 import AppKit
 
@@ -569,9 +570,15 @@ struct SectionShortcut: ViewModifier {
 enum IconCache {
     private static let cache: NSCache<NSString, NSImage> = { let c = NSCache<NSString, NSImage>(); c.countLimit = 800; return c }()
     static func icon(_ path: String) -> NSImage {
-        if let i = cache.object(forKey: path as NSString) { return i }
-        let i = NSWorkspace.shared.icon(forFile: path)
-        cache.setObject(i, forKey: path as NSString)
+        // arquivos comuns: um ícone por tipo (rápido e poucas entradas); pastas e apps: ícone próprio
+        let ext = (path as NSString).pathExtension.lowercased()
+        let perType = !ext.isEmpty && !["app", "bundle", "photoslibrary", "fcpbundle", "prproj", "framework"].contains(ext)
+        let key = (perType ? "ext:" + ext : path) as NSString
+        if let i = cache.object(forKey: key) { return i }
+        let i: NSImage
+        if perType, let t = UTType(filenameExtension: ext) { i = NSWorkspace.shared.icon(for: t) }
+        else { i = NSWorkspace.shared.icon(forFile: path) }
+        cache.setObject(i, forKey: key)
         return i
     }
 }
@@ -583,11 +590,17 @@ enum GrainTile {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
                                    samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                                    bytesPerRow: 0, bitsPerPixel: 0)!
-        var rng = SystemRandomNumberGenerator()
-        for y in 0..<side { for x in 0..<side {
-            let on = Int.random(in: 0..<90, using: &rng) == 0
-            rep.setColor(on ? NSColor(white: 0.5, alpha: 1) : .clear, atX: x, y: y)
-        } }
+        // escreve os pixels direto na memória (rápido e sem conversão de cor por pixel)
+        if let px = rep.bitmapData {
+            var rng = SystemRandomNumberGenerator()
+            let row = rep.bytesPerRow
+            for y in 0..<side { for x in 0..<side {
+                let on = Int.random(in: 0..<90, using: &rng) == 0
+                let i = y * row + x * 4
+                let v: UInt8 = on ? 128 : 0
+                px[i] = v; px[i + 1] = v; px[i + 2] = v; px[i + 3] = on ? 255 : 0
+            } }
+        }
         let img = NSImage(size: NSSize(width: side, height: side))
         img.addRepresentation(rep)
         return img
